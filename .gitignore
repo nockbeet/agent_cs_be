@@ -1,0 +1,51 @@
+# =====================
+# Python 관련
+# =====================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+*.db
+
+# =====================
+# Virtual Environment
+# =====================
+venv/
+.env
+.env.*        # 예: .env.local, .env.dev
+
+# =====================
+# IDE / Editor
+# =====================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# =====================
+# OS 관련
+# =====================
+.DS_Store          # macOS
+Thumbs.db          # Windows
+desktop.ini
+
+# =====================
+# 로그 및 임시 파일
+# =====================
+*.log
+*.tmp
+*.swp
+
+# =====================
+# Frontend 관련 (선택)
+# =====================
+node_modules/
+dist/
+build/
+
+# =====================
+# 기타
+# =====================
+*.bak
+*.orig
