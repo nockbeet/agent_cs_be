@@ -159,7 +159,8 @@
 ```
 
 #### 비고
-- 정상 응답 시, 새 access_token을 발급받고, refresh_token은 기존의 것을 유지. DB sessions 테이블에 새 access_token에 대한 row가 추가됨.
+- 정상 응답 시, 새 access_token을 발급받고, refresh_token은 기존의 것을 유지. DB sessions 테이블에 새 access_token에 대한 row가 추가됨. (제외 예정?)
+- 정상 응답 시 새로운 Access Token을 발급하고 기존 Refresh Token 및 세션은 유지한다. 새로운 sessions row는 생성하지 않는다.
 - 기간이 만료되었거나, 현재 로그인한 사용자의 refresh_token과 일치하지 않은 refresh_token을 request로 전송할 경우 HTTPException 발생
 
 ## User
@@ -315,9 +316,7 @@
         "view_count": 0,
         "created_at": "2025-11-17T14:20:53.570229+09:00",
         "updated_at": "2025-11-17T14:20:53.570229+09:00",
-        "is_blurred": false,
-        "is_deleted": false,
-        "report_count": 0
+        "is_deleted": false
     },
     {
         "id": 2,
@@ -331,14 +330,22 @@
         "author_account_id": "test123",
         "author_username": "테스트 유저",
         "author_image_url": "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/profile-images/b7d20faa-726c-4c89-8848-5a505cd41bd7.jpg",
+        "hashtags": [
+            {
+                "id": 4,
+                "name": "수정된 태그"
+            },
+            {
+                "id": 5,
+                "name": "새로 추가된 태그"
+            }
+        ],
         "like_count": 0,
         "comment_count": 0,
         "view_count": 1,
         "created_at": "2025-11-17T14:20:18.334643+09:00",
         "updated_at": "2025-11-17T14:21:30.012338+09:00",
-        "is_blurred": false,
-        "is_deleted": false,
-        "report_count": 0
+        "is_deleted": false
     }
 ]
 ```
@@ -393,9 +400,7 @@
         "view_count": 1,
         "created_at": "2025-11-17T14:20:18.334643+09:00",
         "updated_at": "2025-11-17T14:24:02.670078+09:00",
-        "is_blurred": false,
-        "is_deleted": false,
-        "report_count": 0
+        "is_deleted": false
     }
 ]
 ```
@@ -453,9 +458,7 @@
         "view_count": 1,
         "created_at": "2025-11-17T14:20:18.334643+09:00",
         "updated_at": "2025-11-17T14:25:05.442793+09:00",
-        "is_blurred": false,
-        "is_deleted": false,
-        "report_count": 0
+        "is_deleted": false
     }
 ]
 ```
@@ -465,7 +468,11 @@
 
 
 ### 2. POST `/posts`
+
 - **설명** : 새 게시글 작성
+    - 게시글 본문은 Markdown 형식으로 저장
+    - 본문에 이미지 삽입 가능
+    - 이미지 파일과 임시 이미지 ID를 연결하여 S3에 업로드
 
 #### Request
 
@@ -474,57 +481,88 @@
     - `Authorization` : bearer `<access_token>`
 
 - **Body** : PostCreate
-
     - form-data
 
     | key | type | example |
     |------|------|----------|
-    | title | text | `첫 게시글입니다.` |
-    | content | text | `이것은 첫 게시글` |
-    | images  | file | [`image1.png`, `image2.png`] |
-    | hashtags | text | [`Python`, `자료구조`] |
+    | title | text | `Python 공부 기록` |
+    | content | text | `Python으로 그래프를 만들었습니다.\n\n![그래프](upload://graph_abc)\n\n실행 결과입니다.\n\n![실행 결과](upload://result_xyz)` |
+    | images | file | `graph.png`, `result.png` |
+    | image_ids | text | `graph_abc`, `result_xyz` |
+    | hashtags | text | `Python`, `Matplotlib` |
 
-    - title, content는 필수 입력
+    - `title`, `content`는 필수 입력
+    - `images`, `image_ids`, `hashtags`는 선택 입력
+    - `images`, `image_ids`, `hashtags`는 동일한 key를 반복하여 여러 값을 전달할 수 있음
+    - `images`와 `image_ids`는 같은 순서로 전달해야 함
+    - 이미지 파일 하나당 하나의 `image_id`가 필요함
+
+- **content 예시**
+
+    ```markdown
+    Python으로 그래프를 만들었습니다.
+
+    ![그래프](upload://graph_abc)
+
+    실행 결과입니다.
+
+    ![실행 결과](upload://result_xyz)
+    ```
+
+- **이미지 매칭 예시**
+
+    | image_ids | images |
+    |-----------|--------|
+    | `graph_abc` | `graph.png` |
+    | `result_xyz` | `result.png` |
 
 #### Response
 
 - PostDetailResponse (정상 응답 시)
+
 ```json
 {
     "id": 3,
-    "title": "첫 게시글입니다.",
-    "content": "이것은 첫 게시글",
+    "title": "Python 공부 기록",
+    "content": "Python으로 그래프를 만들었습니다.\n\n![그래프](https://example.com/posts/graph.png)\n\n실행 결과입니다.\n\n![실행 결과](https://example.com/posts/result.png)",
     "image_urls": [
-        "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/posts/3417c0af-9d12-431e-9d5d-9bc71a088192.png",
-        "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/posts/bcd02cb4-3adf-41d9-a0d1-e90f11cb288b.png"
+        "https://example.com/posts/graph.png",
+        "https://example.com/posts/result.png"
     ],
     "author_id": 6,
     "author_account_id": "test123",
-    "author_username": "testuser",
-    "author_image_url": "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/profile-images/b7d20faa-726c-4c89-8848-5a505cd41bd7.jpg",
+    "author_username": "테스트 유저",
+    "author_image_url": null,
     "hashtags": [
         {
             "id": 1,
             "name": "Python"
         },
         {
-            "id": 3,
-            "name": "자료구조"
+            "id": 2,
+            "name": "Matplotlib"
         }
     ],
     "like_count": 0,
     "comment_count": 0,
     "view_count": 0,
-    "created_at": "2025-11-17T14:20:53.570229+09:00",
-    "updated_at": "2025-11-17T14:20:53.570229+09:00",
-    "is_blurred": false,
-    "is_deleted": false,
-    "report_count": 0
+    "created_at": "2026-10-31T14:20:53+09:00",
+    "updated_at": "2026-10-31T14:20:53+09:00",
+    "is_deleted": false
 }
 ```
 
 #### 비고
-- 이미지 파일이 있을 경우 S3 스토리지에 업로드됨.
+
+- 이미지 파일은 S3 스토리지에 업로드됨.
+- 서버는 `image_ids`와 `images`를 같은 순서로 연결하여 이미지 파일을 식별함.
+- `content` 내의 `upload://{image_id}` 참조를 S3 업로드 후 실제 이미지 URL로 치환하여 DB에 저장함.
+- 이미지가 없는 게시글은 `images`, `image_ids`를 생략할 수 있으며, `image_urls`는 빈 배열 `[]`로 반환됨.
+- 이미지 파일이 있는 경우 `images`와 `image_ids`의 개수가 일치해야 함.
+- 하나의 요청에서 `image_ids` 값은 중복될 수 없음.
+- 업로드된 이미지 파일은 `content` 내에서 최소 한 번 이상 참조되어야 함.
+- `content`에 존재하는 임시 이미지 ID에 대응하는 파일이 없는 경우 HTTPException 발생.
+- 이미지 업로드 또는 게시글 저장 중 오류가 발생하면 요청을 실패 처리하며, 업로드 완료 후 저장에 실패한 S3 객체는 정리하도록 구현함.
 
 
 ### 3. GET `/posts/{post_id}`
@@ -572,9 +610,7 @@
     "view_count": 1,
     "created_at": "2025-11-17T14:20:18.334643+09:00",
     "updated_at": "2025-11-17T14:21:30.012338+09:00",
-    "is_blurred": false,
-    "is_deleted": false,
-    "report_count": 0
+    "is_deleted": false
 }
 ```
 
@@ -583,8 +619,11 @@
 
 
 ### 4. PATCH `/posts/{post_id}`
+
 - **설명** : 사용자 본인의 게시글 수정
-    - 이미지, 해시태그 수정 가능
+    - 제목, Markdown 본문, 이미지, 해시태그 수정 가능
+    - 기존 이미지를 유지하면서 새 이미지를 추가하거나 기존 이미지를 제거할 수 있음
+    - 해시태그는 전달된 목록으로 전체 교체
 
 #### Request
 
@@ -594,63 +633,113 @@
 
 - **Path Parameter**
 
-| key | example |
-| --- | ------- |
-| post_id | 2 |
+    | key | example |
+    |-----|---------|
+    | post_id | 2 |
 
--> url 구조는 `/posts/2`가 됨.
+    → URL 구조는 `/posts/2`가 됨.
 
 - **Body** : PostUpdate
     - form-data
 
     | key | type | example |
     |------|------|----------|
-    | title | text | `제목이 수정된 게시글` |
-    | content | text | `이 게시글은 수정되었습니다` |
-    | images  | file | [`image3.png`, `image4.png`] |
-    | hashtags | text | [`수정된 태그`, `새로 추가된 태그`] |
+    | title | text | `수정된 Python 공부 기록` |
+    | content | text | `기존 그래프입니다.\n\n![기존 이미지](https://example.com/posts/old.png)\n\n새로운 결과입니다.\n\n![새 이미지](upload://new_xyz)` |
+    | images | file | `new_result.png` |
+    | image_ids | text | `new_xyz` |
+    | hashtags | text | `Python`, `시각화` |
 
-    - 모든 필드는 **optional**
+    - 모든 필드는 선택 입력
+    - `images`, `image_ids`, `hashtags`는 동일한 key를 반복하여 여러 값을 전달할 수 있음
+    - `images`와 `image_ids`는 같은 순서로 전달해야 함
+    - 새 이미지 파일 하나당 하나의 `image_id`가 필요함
+
+- **content 수정 예시**
+
+    기존 게시글의 `content`:
+
+    ```markdown
+    기존 그래프입니다.
+
+    ![기존 이미지](https://example.com/posts/old.png)
+
+    더 이상 필요하지 않은 이미지입니다.
+
+    ![삭제할 이미지](https://example.com/posts/remove.png)
+    ```
+
+    수정 요청의 `content`:
+
+    ```markdown
+    기존 그래프입니다.
+
+    ![기존 이미지](https://example.com/posts/old.png)
+
+    새로운 결과입니다.
+
+    ![새 이미지](upload://new_xyz)
+    ```
+
+    위 요청에서는 다음과 같이 처리됨.
+
+    - `old.png` : 기존 이미지 유지
+    - `remove.png` : 본문에서 참조가 제거되었으므로 게시글 이미지 목록에서 제거
+    - `new_result.png` : S3에 업로드한 뒤 `upload://new_xyz`를 실제 이미지 URL로 치환
 
 #### Response
+
 - PostDetailResponse (정상 응답 시)
+
 ```json
 {
     "id": 2,
-    "title": "제목이 수정된 게시글",
-    "content": "이 게시글은 수정되었습니다",
+    "title": "수정된 Python 공부 기록",
+    "content": "기존 그래프입니다.\n\n![기존 이미지](https://example.com/posts/old.png)\n\n새로운 결과입니다.\n\n![새 이미지](https://example.com/posts/new_result.png)",
     "image_urls": [
-        "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/posts/7178fc98-bb48-4152-af4c-ff9e353cb8e4.png",
-        "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/posts/7a5885dd-9021-4ddd-9cd0-53fda46a323e.png"
+        "https://example.com/posts/old.png",
+        "https://example.com/posts/new_result.png"
     ],
     "author_id": 6,
     "author_account_id": "test123",
-    "author_username": "testuser",
-    "author_image_url": "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/profile-images/b7d20faa-726c-4c89-8848-5a505cd41bd7.jpg",
+    "author_username": "테스트 유저",
+    "author_image_url": null,
     "hashtags": [
         {
-            "id": 4,
-            "name": "수정된 태그"
+            "id": 1,
+            "name": "Python"
         },
         {
-            "id": 5,
-            "name": "새로 추가된 태그"
+            "id": 4,
+            "name": "시각화"
         }
     ],
-    "like_count": 0,
+    "like_count": 1,
     "comment_count": 0,
     "view_count": 1,
-    "created_at": "2025-11-17T14:20:18.334643+09:00",
-    "updated_at": "2025-11-17T14:22:42.314093+09:00",
-    "is_blurred": false,
-    "is_deleted": false,
-    "report_count": 0
+    "created_at": "2026-10-30T14:20:18+09:00",
+    "updated_at": "2026-10-31T14:22:42+09:00",
+    "is_deleted": false
 }
 ```
 
 #### 비고
-- 제공된 필드만 업데이트됨.
-- 사용자 본인이 작성하지 않은 게시글을 수정하려고 하면 HTTPException 발생
+
+- 사용자 본인이 작성하지 않은 게시글을 수정하려고 하면 HTTPException 발생.
+- 제공된 필드만 수정하며, 전달하지 않은 필드는 기존 값을 유지함.
+- `content`가 전달되지 않으면 기존 본문과 이미지 구성을 유지함.
+- 새 이미지 추가 또는 기존 이미지 제거를 위해서는 수정된 `content`를 함께 전달해야 함.
+- `content`가 전달되면 해당 Markdown에 포함된 기존 이미지 URL을 기준으로 유지할 이미지를 판단함.
+- 본문에서 참조가 제거된 기존 이미지는 `PostImage`의 연결 정보에서 제거함. S3 객체의 실제 삭제 여부와 시점은 별도 저장소 정리 정책에 따름.
+- 기존 게시글에 속하지 않는 이미지 URL을 기존 이미지로 참조하려는 경우 HTTPException 발생.
+- 새 이미지를 첨부하는 경우 `images`, `image_ids`를 함께 전달해야 하며, 두 필드의 개수가 일치해야 함.
+- 새 이미지의 임시 ID는 중복될 수 없으며, `content`에서 참조되어야 함.
+- `content`에 존재하는 임시 이미지 ID에 대응하는 파일이 없으면 HTTPException 발생.
+- `hashtags`를 전달하면 기존 해시태그 연결을 해제하고 전달된 해시태그 목록으로 전체 교체함.
+- `hashtags`를 전달하지 않으면 기존 해시태그를 유지함.
+- 해시태그를 모두 제거하려면 별도로 정의한 빈 목록 전달 규칙을 사용해야 함.
+- 삭제된 게시글은 수정할 수 없음.
+
 
 
 ### 5. DELETE `/posts/{post_id}`
@@ -785,9 +874,7 @@
         "parent_comment_id": null,
         "created_at": "2025-11-18T00:40:34.820944+09:00",
         "updated_at": "2025-11-18T00:40:34.820944+09:00",
-        "is_blurred": false,
         "is_deleted": false,
-        "report_count": 0,
         "replies": []
     }
 ```
@@ -826,9 +913,7 @@
         "parent_comment_id": null,
         "created_at": "2025-11-18T00:40:34.820944+09:00",
         "updated_at": "2025-11-18T00:40:34.820944+09:00",
-        "is_blurred": false,
         "is_deleted": false,
-        "report_count": 0,
         "replies": []
     },
     {
@@ -842,9 +927,7 @@
         "parent_comment_id": null,
         "created_at": "2025-11-18T00:40:46.395370+09:00",
         "updated_at": "2025-11-18T00:40:46.395370+09:00",
-        "is_blurred": false,
         "is_deleted": false,
-        "report_count": 0,
         "replies": []
     }
 ]
@@ -871,7 +954,7 @@
 | post_id | 2 |
 | comment_id | 1 |
 
--> url 구조는 `/api/posts/2/comments/1`가 됨.
+-> url 구조는 `/posts/2/comments/1`가 됨.
 
 - **Body** : CommentUpdate
 
@@ -890,16 +973,14 @@
     "id": 1,
     "post_id": 2,
     "user_id": 6,
-    "username": "testuser",
-    "account_id": "테스트 유저",
+    "username": "테스트 유저",
+    "account_id": "test123",
     "profile_image_url": "https://fish-market-files.s3.ap-northeast-2.amazonaws.com/profile-images/b7d20faa-726c-4c89-8848-5a505cd41bd7.jpg",
     "content": "이 댓글은 수정되었습니다.",
     "parent_comment_id": null,
     "created_at": "2025-11-18T00:40:34.820944+09:00",
     "updated_at": "2025-11-18T00:41:22.045239+09:00",
-    "is_blurred": false,
     "is_deleted": false,
-    "report_count": 0,
     "replies": []
 }
 ```
@@ -985,12 +1066,13 @@
     "parent_comment_id": 2,
     "created_at": "2025-11-18T00:41:55.251528+09:00",
     "updated_at": "2025-11-18T00:41:55.251528+09:00",
-    "is_blurred": false,
     "is_deleted": false,
-    "report_count": 0,
     "replies": []
 }
 ```
 
 #### 비고
 - 존재하지 않는 댓글에 대댓글 작성하려 할 경우 HTTPException 발생
+- 대댓글은 최상위 댓글에 대해서만 작성 가능
+- 대댓글에 다시 대댓글 작성 불가
+- 삭제된 댓글에는 대댓글 작성 불가

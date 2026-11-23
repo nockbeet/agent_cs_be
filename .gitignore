@@ -13,7 +13,9 @@ __pycache__/
 # =====================
 venv/
 .env
-.env.*        # 예: .env.local, .env.dev
+.env.*
+!.env.example        
+# 예: .env.local, .env.dev
 
 # =====================
 # IDE / Editor
@@ -26,8 +28,10 @@ venv/
 # =====================
 # OS 관련
 # =====================
-.DS_Store          # macOS
-Thumbs.db          # Windows
+# macOS
+.DS_Store
+# Windows          
+Thumbs.db          
 desktop.ini
 
 # =====================
@@ -49,3 +53,14 @@ build/
 # =====================
 *.bak
 *.orig
+
+# Python 테스트 및 검사 도구
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Python 패키징
+*.egg-info/
+.eggs/
