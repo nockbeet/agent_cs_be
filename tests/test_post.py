@@ -886,3 +886,195 @@ def test_concurrent_delete_post_and_like(
         else:
             assert len(likes) == 0
             assert saved_post.like_count == 0
+            
+
+# -------------------------
+# 20~21. 기존 이미지 유지 및 Markdown 참조 검증
+# -------------------------
+
+@pytest.mark.parametrize(
+    "use_angle_brackets",
+    [False, True],
+    ids=["normal_markdown", "angle_bracket_markdown"],
+)
+def test_update_post_preserve_existing_image(
+    client,
+    test_accounts,
+    mock_s3,
+    monkeypatch,
+    use_angle_brackets,
+):
+    user = test_accounts[0]
+
+    # 실제 Presigned URL과 유사하게 쿼리 문자열 포함
+    def fake_generate_image_url(object_key):
+        return (
+            f"https://example.com/{object_key}"
+            "?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            "&X-Amz-Expires=3600"
+            "&X-Amz-Signature=test_signature"
+        )
+
+    monkeypatch.setattr(
+        post_router,
+        "generate_image_url",
+        fake_generate_image_url,
+    )
+
+    # 1. 이미지가 포함된 게시글 작성
+    create_response = client.post(
+        "/posts",
+        headers=user["headers"],
+        data={
+            "title": "기존 이미지 유지 테스트",
+            "content": (
+                "기존 게시글 본문입니다.\n\n"
+                "![테스트 이미지](upload://img_1)"
+            ),
+            "image_ids": "img_1",
+        },
+        files={
+            "images": (
+                "test.png",
+                io.BytesIO(b"test"),
+                "image/png",
+            )
+        },
+    )
+
+    assert create_response.status_code == 201, create_response.text
+
+    created = create_response.json()
+
+    post_id = created["id"]
+    image_id = created["images"][0]["id"]
+    image_url = created["images"][0]["image_url"]
+    object_key = mock_s3["uploaded"][0]
+
+    # 2. 프론트엔드 에디터에서 전달할 Markdown 구성
+    if use_angle_brackets:
+        image_reference = f"![테스트 이미지](<{image_url}>)"
+        internal_reference = f"![테스트 이미지](<s3://{object_key}>)"
+    else:
+        image_reference = f"![테스트 이미지]({image_url})"
+        internal_reference = f"![테스트 이미지](s3://{object_key})"
+
+    updated_content = (
+        "기존 게시글 본문입니다.\n\n"
+        f"{image_reference}\n\n"
+        "게시글 본문을 수정했습니다."
+    )
+
+    expected_db_content = (
+        "기존 게시글 본문입니다.\n\n"
+        f"{internal_reference}\n\n"
+        "게시글 본문을 수정했습니다."
+    )
+
+    # 3. 기존 이미지를 유지하면서 본문 수정
+    update_response = client.patch(
+        f"/posts/{post_id}",
+        headers=user["headers"],
+        data={
+            "content": updated_content,
+            "keep_image_ids": f"[{image_id}]",
+        },
+    )
+
+    assert update_response.status_code == 200, update_response.text
+
+    updated = update_response.json()
+
+    # 4. API 응답 검증
+    assert updated["content"] == updated_content
+    assert len(updated["images"]) == 1
+    assert updated["images"][0]["id"] == image_id
+    assert updated["images"][0]["image_url"] == image_url
+
+    # 기존 이미지가 다시 업로드되거나 삭제되지 않아야 함
+    assert len(mock_s3["uploaded"]) == 1
+    assert mock_s3["deleted"] == []
+
+    # 5. DB 저장 상태 검증
+    with SessionLocal() as db:
+        saved_post = db.get(Post, post_id)
+        saved_image = db.get(PostImage, image_id)
+
+        assert saved_post is not None
+        assert saved_image is not None
+
+        assert saved_post.content == expected_db_content
+        assert saved_image.image_url == object_key
+        assert saved_image.post_id == post_id
+
+        # Presigned URL이 DB에 저장되면 안 됨
+        assert "https://" not in saved_post.content
+        assert "X-Amz-Signature" not in saved_post.content
+
+    # 6. 상세 조회 응답 검증
+    detail_response = client.get(f"/posts/{post_id}")
+
+    assert detail_response.status_code == 200
+    assert detail_response.json()["content"] == updated_content
+    assert detail_response.json()["images"] == updated["images"]
+    
+    
+    # -------------------------
+# 22. 꺾쇠괄호가 포함된 새 이미지 참조 처리
+# -------------------------
+
+def test_create_post_with_angle_bracket_image(
+    client,
+    test_accounts,
+    mock_s3,
+):
+    user = test_accounts[0]
+
+    response = client.post(
+        "/posts",
+        headers=user["headers"],
+        data={
+            "title": "꺾쇠괄호 이미지 테스트",
+            "content": (
+                "이미지 업로드 테스트\n\n"
+                "![테스트 이미지](<upload://img_1>)"
+            ),
+            "image_ids": "img_1",
+        },
+        files={
+            "images": (
+                "test.png",
+                io.BytesIO(b"test"),
+                "image/png",
+            )
+        },
+    )
+
+    assert response.status_code == 201, response.text
+
+    result = response.json()
+
+    assert len(result["images"]) == 1
+    assert len(mock_s3["uploaded"]) == 1
+
+    image_url = result["images"][0]["image_url"]
+    object_key = mock_s3["uploaded"][0]
+
+    expected_content = (
+        "이미지 업로드 테스트\n\n"
+        f"![테스트 이미지](<{image_url}>)"
+    )
+
+    assert result["content"] == expected_content
+    assert "upload://" not in result["content"]
+
+    with SessionLocal() as db:
+        saved_post = db.get(Post, result["id"])
+
+        expected_db_content = (
+            "이미지 업로드 테스트\n\n"
+            f"![테스트 이미지](<s3://{object_key}>)"
+        )
+
+        assert saved_post is not None
+        assert saved_post.content == expected_db_content

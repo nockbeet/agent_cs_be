@@ -39,10 +39,10 @@ router = APIRouter(prefix="/posts", tags=["Post"])
 DbSession = Annotated[Session, Depends(get_db)]
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
-UPLOAD_PATTERN = re.compile(r"upload://([^\s)]+)")
+UPLOAD_PATTERN = re.compile(r"upload://([^\s)<>]+)")
 IMAGE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
-INTERNAL_IMAGE_PATTERN = re.compile(r"s3://posts/[^\s)]+")
-HTTP_IMAGE_PATTERN = re.compile(r"https?://[^\s)]+")
+INTERNAL_IMAGE_PATTERN = re.compile(r"s3://posts/[^\s)<>]+")
+HTTP_IMAGE_PATTERN = re.compile(r"https?://[^\s)<>]+")
 MAX_IMAGES = 10
 
 
